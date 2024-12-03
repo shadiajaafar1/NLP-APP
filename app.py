@@ -31,14 +31,6 @@ except FileNotFoundError as e:
     st.error(f"Error: {e}")
     st.stop()
     
-def clean(review):
-    
-    review = review.lower()
-    review = re.sub('[^a-z A-Z 0-9-]+', '', review)
-    review = " ".join([word for word in review.split() if word not in stopwords.words('english')])
-    
-    return review
-
 def corpus(text):
     text_list = text.split()
     return text_list
@@ -48,9 +40,6 @@ test["Label"] = test_label["Contenido"]
 
 df = pd.concat([train, test], ignore_index=True)
 
-
-#df['Comment'] = df['Contenido'].apply(clean)
-#df['Comment_Lists'] = df['Contenido'].apply(corpus)
 
 df['comment_length'] = df["Contenido"].astype(str).apply(len)
 df['Word_count'] = df["Contenido"].apply(lambda x: len(str(x).split()))
@@ -93,43 +82,35 @@ st.markdown(custom_style, unsafe_allow_html=True)
 with st.sidebar:
     selected = option_menu(
         menu_title="Navigation",  # Título del menú
-        options=["Dashboard", "Models"],  # Opciones del menú
-        icons=["bar-chart", "robot"],  # Iconos (de https://icons.getbootstrap.com/)
+        options=["Dashboard"],  # Opciones del menú
+        icons=["bar-chart"],  # Iconos (de https://icons.getbootstrap.com/)
         menu_icon="cast",  # Icono del menú principal
         default_index=0,  # Página por defecto
     )
 
-st.sidebar.header("Filter Options")
-options = ["Positive", "Negative", "Neutral", "Question"]
+options = ["Positivo", "Negativo", "Neutral", "Pregunta"]
 selection = st.sidebar.multiselect(
-    "Select Sentiment", options, default=options
+    "Selecciona el Sentimiento", options, default=options
 )
 
 
 #Filtros-----
 label_mapping = {
-    "Positive": "pos",
-    "Negative": "neg",
+    "Positivo": "pos",
+    "Negativo": "neg",
     "Neutral": "neu",
-    "Question": "q",
+    "Pregunta": "q",
 }
 
 if selected == "Dashboard":
     
-    st.title("Sentiment Analysis")
+    st.title("Análisis de Sentimiento de Comentarios")
 
     if selection:
         mapped_selection = [label_mapping[opt] for opt in selection]
         filtered_df = df[df["Label"].isin(mapped_selection)]
     else:
         filtered_df = df
-
-    #most_common = Counter(corpus).most_common(10)
-    #words = [word for word, count in most_common]
-    #freq = [count for word, count in most_common]
-
-    # Mostrar conteo
-    #st.bar_chart(pd.DataFrame({"Words": words, "Frequency": freq}).set_index("Words"))
 
     #Métricas--------
     puntos = {
@@ -140,15 +121,13 @@ if selected == "Dashboard":
     }
     filtered_df['Points'] = filtered_df['Label'].map(puntos)
     grade = round(filtered_df['Points'].sum() / (len(filtered_df) * 2), 2)
+    moda = filtered_df['Label'].mode().iloc[0]
     
-    col1, col2= st.columns(2)
-    col1.metric("Number of Comments", len(filtered_df))
-    col2.metric("Comments Score", grade)
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Número de comentarios", len(filtered_df))
+    col2.metric("Score de sentimiento", grade)
+    col3.metric('Sentimiento Modal', moda)
 
-
-    #Gráficos------
-    # Crear columnas
-    #col1, col2 = st.columns(2)
 
     # Gráfico de distribución de etiquetas (dona) en la primera columna
     label_counts = filtered_df["Label"].value_counts().reset_index()
@@ -158,28 +137,28 @@ if selected == "Dashboard":
             color=alt.Color(field="Label", type="nominal"),
             tooltip=["Label", "Count"]
         ).properties(
-            title="Distribution of Sentiment Labels"
+            title="Distribución de Etiquetas"
         )
     st.altair_chart(fig_pie, use_container_width=True)
 
     # Histograma de longitud de comentarios en la segunda columna
     fig_hist = alt.Chart(filtered_df).mark_bar().encode(
-            alt.X("comment_length", bin=alt.Bin(maxbins=30), title="Comment Length (characters)"),
-            alt.Y("count()", title="Frequency"),
+            alt.X("comment_length", bin=alt.Bin(maxbins=30), title="Longitud del Comentario (caracteres)"),
+            alt.Y("count()", title="Frecuencia"),
             tooltip=["count()"]
         ).properties(
-            title="Histogram of Comment Lengths"
+            title="Distribución de la longitud de los comentarios"
         )
     st.altair_chart(fig_hist, use_container_width=True)
 
     # Histograma del número de palabras en la tercera columna
 
     fig_word_hist = alt.Chart(filtered_df).mark_bar().encode(
-            alt.X("Word_count", bin=alt.Bin(maxbins=30), title="Number of Words"),
-            alt.Y("count()", title="Frequency"),
+            alt.X("Word_count", bin=alt.Bin(maxbins=30), title="Número de palabras"),
+            alt.Y("count()", title="Frecuencia"),
             tooltip=["count()"]
         ).properties(
-            title="Histogram of Number of Words"
+            title="Distribución de comentarios según el número de palabras"
         )
     st.altair_chart(fig_word_hist, use_container_width=True)
 
@@ -226,78 +205,7 @@ if selected == "Dashboard":
         with col2:
             st.altair_chart(kdeplot, use_container_width=True)
 
-else:
-    st.title("Deep Learning Models")
-    st.subheader('Resultados LSTM')
 
-    if os.path.exists('history_lstm.joblib'):
-
-        history_lstm = load('history_lstm.joblib')
-        
-        # Preparar los datos para el gráfico
-        history_df = pd.DataFrame({
-            'epoch': list(range(1, len(history_lstm['accuracy']) + 1)),
-            'accuracy': history_lstm['accuracy'],
-            'loss': history_lstm['loss']
-        })
-
-        history_melted = history_df.melt(id_vars='epoch', var_name='metric', value_name='value')
-        
-        acc_chart = alt.Chart(history_melted).mark_line(point=True).encode(
-            x=alt.X('epoch:Q', title='Epoch'),
-            y=alt.Y('value:Q', title='Value'),
-            color=alt.Color('metric:N', title='Metric'),
-            tooltip=['epoch:Q', 'metric:N', 'value:Q']
-        ).properties(
-            title='Model Training Metrics',
-            width=600,
-            height=400
-        )
-
-        st.altair_chart(acc_chart, use_container_width=True)
-    else:
-        st.error("El archivo 'history_lstm.joblib' no existe. Por favor, entrena el modelo primero.")
-    
-    image_lstm = Image.open("confusion_matrix_lstm.png")
-    image_resized_lstm = image_lstm.resize((500, 500))
-    st.image(image_resized_lstm)
-        
-    st.subheader('Resultados RNN')
-    
-    if os.path.exists('history_RNN.joblib'):
-
-        history_rnn = load('history_RNN.joblib')
-        
-        # Preparar los datos para el gráfico
-        history_df_RNN = pd.DataFrame({
-            'epoch': list(range(1, len(history_lstm['accuracy']) + 1)),
-            'accuracy': history_lstm['accuracy'],
-            'loss': history_lstm['loss']
-        })
-
-        history_melted = history_df_RNN.melt(id_vars='epoch', var_name='metric', value_name='value')
-        
-        acc_chart = alt.Chart(history_melted).mark_line(point=True).encode(
-            x=alt.X('epoch:Q', title='Epoch'),
-            y=alt.Y('value:Q', title='Value'),
-            color=alt.Color('metric:N', title='Metric'),
-            tooltip=['epoch:Q', 'metric:N', 'value:Q']
-        ).properties(
-            title='Model Training Metrics',
-            width=600,
-            height=400
-        )
-
-        st.altair_chart(acc_chart, use_container_width=True)
-    
-        
-    else:
-        st.error("El archivo 'history_lstm.joblib' no existe. Por favor, entrena el modelo primero.")
-    
-    image = Image.open("confusion_matrix_rnn.png")
-    image_resized = image.resize((500, 500))
-    st.image(image_resized)
-        
     
 
 
